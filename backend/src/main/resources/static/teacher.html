@@ -1,0 +1,472 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AssessIQ - Teacher Dashboard</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background: #f4f6fb;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        h1, h2 {
+            color: #243b80;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            margin: 20px 0;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px #0000000d;
+        }
+
+        input, textarea, select, button {
+            font: inherit;
+            padding: 10px;
+            margin: 6px 0;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+        }
+
+        button {
+            background: #3457d5;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #243b80;
+        }
+
+        .question {
+            padding: 15px;
+            margin: 12px 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+
+        .options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .message {
+            margin-top: 10px;
+            overflow-wrap: anywhere;
+        }
+
+        .success {
+            color: #15803d;
+        }
+
+        .error {
+            color: #b91c1c;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #eef2ff;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 12px;
+            }
+
+            .options {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>AssessIQ</h1>
+    <p>Teacher Dashboard — Create assessments and view student results.</p>
+
+    <div class="card">
+        <h2>Create Assessment</h2>
+
+        <form id="assessmentForm">
+            <label for="assessmentTitle">Assessment Title</label>
+            <input id="assessmentTitle" required
+                   placeholder="Example: Java OOP Practice Test">
+
+            <label for="assessmentDescription">Description</label>
+            <textarea id="assessmentDescription" rows="3"
+                      placeholder="Enter assessment description"></textarea>
+
+            <button type="submit">Create Assessment</button>
+        </form>
+
+        <p id="createMessage" class="message"></p>
+    </div>
+
+    <div class="card">
+        <h2>Add Question</h2>
+
+        <form id="questionForm">
+            <label for="questionAssessment">Select Assessment</label>
+            <select id="questionAssessment" required>
+                <option value="">Loading assessments...</option>
+            </select>
+
+            <label for="questionText">Question</label>
+            <input id="questionText" required
+                   placeholder="Enter your question">
+
+            <div class="options">
+                <div>
+                    <label for="optionA">Option A</label>
+                    <input id="optionA" required>
+                </div>
+                <div>
+                    <label for="optionB">Option B</label>
+                    <input id="optionB" required>
+                </div>
+                <div>
+                    <label for="optionC">Option C</label>
+                    <input id="optionC" required>
+                </div>
+                <div>
+                    <label for="optionD">Option D</label>
+                    <input id="optionD" required>
+                </div>
+            </div>
+
+            <label for="correctAnswer">Correct Answer</label>
+            <select id="correctAnswer" required>
+                <option value="">Select correct option</option>
+                <option value="A">Option A</option>
+                <option value="B">Option B</option>
+                <option value="C">Option C</option>
+                <option value="D">Option D</option>
+            </select>
+
+            <button type="submit">Add Question</button>
+        </form>
+
+        <p id="questionMessage" class="message"></p>
+    </div>
+
+    <div class="card">
+        <h2>All Assessments</h2>
+        <button type="button" id="refreshAssessments">
+            Refresh Assessments
+        </button>
+        <div id="assessmentsList"></div>
+    </div>
+
+    <div class="card">
+        <h2>Student Quiz Results</h2>
+
+        <label for="resultAssessment">Select Assessment</label>
+        <select id="resultAssessment">
+            <option value="">Loading assessments...</option>
+        </select>
+
+        <button type="button" id="loadResultsButton">Load Results</button>
+
+        <p id="resultMessage" class="message"></p>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Score</th>
+                    <th>Percentage</th>
+                    <th>Submitted At</th>
+                </tr>
+                </thead>
+                <tbody id="quizResultsBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <p><a href="/">Back to Home</a></p>
+</div>
+
+<script>
+    const assessmentTitle = document.getElementById("assessmentTitle");
+    const assessmentDescription = document.getElementById("assessmentDescription");
+    const createMessage = document.getElementById("createMessage");
+    const questionMessage = document.getElementById("questionMessage");
+    const resultMessage = document.getElementById("resultMessage");
+
+    async function loadAssessments() {
+        const questionDropdown = document.getElementById("questionAssessment");
+        const resultDropdown = document.getElementById("resultAssessment");
+        const list = document.getElementById("assessmentsList");
+
+        try {
+            const response = await fetch("/api/assessments");
+
+            if (!response.ok) {
+                throw new Error("Could not load assessments.");
+            }
+
+            const assessments = await response.json();
+
+            for (const dropdown of [questionDropdown, resultDropdown]) {
+                const previousValue = dropdown.value;
+                dropdown.replaceChildren();
+
+                const placeholder = document.createElement("option");
+                placeholder.value = "";
+                placeholder.textContent = "Select an assessment";
+                dropdown.appendChild(placeholder);
+
+                for (const assessment of assessments) {
+                    const option = document.createElement("option");
+                    option.value = assessment.id;
+                    option.textContent =
+                        `${assessment.title} (ID: ${assessment.id})`;
+                    dropdown.appendChild(option);
+                }
+
+                if ([...dropdown.options].some(
+                    option => option.value === previousValue
+                )) {
+                    dropdown.value = previousValue;
+                }
+            }
+
+            list.replaceChildren();
+
+            if (assessments.length === 0) {
+                list.textContent = "No assessments created yet.";
+            }
+
+            for (const assessment of assessments) {
+                const item = document.createElement("div");
+                item.className = "question";
+
+                const title = document.createElement("strong");
+                title.textContent =
+                    `${assessment.title} (ID: ${assessment.id})`;
+
+                const description = document.createElement("p");
+                description.textContent =
+                    assessment.description || "No description";
+
+                item.append(title, description);
+                list.appendChild(item);
+            }
+        } catch (error) {
+            questionDropdown.replaceChildren();
+            resultDropdown.replaceChildren();
+
+            for (const dropdown of [questionDropdown, resultDropdown]) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "Failed to load assessments";
+                dropdown.appendChild(option);
+            }
+
+            list.textContent = error.message;
+        }
+    }
+
+    document.getElementById("assessmentForm").addEventListener(
+        "submit", async function (event) {
+            event.preventDefault();
+            createMessage.textContent = "Creating assessment...";
+            createMessage.className = "message";
+
+            try {
+                const response = await fetch("/api/assessments", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        title: assessmentTitle.value.trim(),
+                        description: assessmentDescription.value.trim(),
+                        createdBy: 1,
+                        questions: []
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || data.error ||
+                                    "Could not create assessment.");
+                }
+
+                createMessage.textContent =
+                    `Assessment created successfully. ID: ${data.id}`;
+                createMessage.className = "message success";
+
+                this.reset();
+                await loadAssessments();
+            } catch (error) {
+                createMessage.textContent = error.message;
+                createMessage.className = "message error";
+            }
+        }
+    );
+
+    document.getElementById("questionForm").addEventListener(
+        "submit", async function (event) {
+            event.preventDefault();
+
+            const id = document.getElementById("questionAssessment").value;
+
+            if (!id) {
+                questionMessage.textContent = "Select an assessment first.";
+                questionMessage.className = "message error";
+                return;
+            }
+
+            questionMessage.textContent = "Adding question...";
+            questionMessage.className = "message";
+
+            try {
+                const response = await fetch(
+                    `/api/assessments/${id}/questions`, {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({
+                            text: document.getElementById("questionText").value.trim(),
+                            optionA: document.getElementById("optionA").value.trim(),
+                            optionB: document.getElementById("optionB").value.trim(),
+                            optionC: document.getElementById("optionC").value.trim(),
+                            optionD: document.getElementById("optionD").value.trim(),
+                            correctAnswer: document.getElementById("correctAnswer").value
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || data.error ||
+                                    "Could not add question.");
+                }
+
+                questionMessage.textContent = "Question added successfully.";
+                questionMessage.className = "message success";
+                this.reset();
+            } catch (error) {
+                questionMessage.textContent = error.message;
+                questionMessage.className = "message error";
+            }
+        }
+    );
+
+    document.getElementById("refreshAssessments").addEventListener(
+        "click", loadAssessments
+    );
+
+    document.getElementById("loadResultsButton").addEventListener(
+        "click", loadQuizResults
+    );
+
+    async function loadQuizResults() {
+        const assessmentId =
+            document.getElementById("resultAssessment").value;
+        const body = document.getElementById("quizResultsBody");
+
+        body.replaceChildren();
+
+        if (!assessmentId) {
+            resultMessage.textContent = "Please select an assessment.";
+            resultMessage.className = "message error";
+            return;
+        }
+
+        resultMessage.textContent = "Loading results...";
+        resultMessage.className = "message";
+
+        try {
+            const response = await fetch(
+                `/api/assessments/${assessmentId}/attempts`
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    "Could not load results. Check the backend and assessment."
+                );
+            }
+
+            const attempts = await response.json();
+
+            if (!Array.isArray(attempts) || attempts.length === 0) {
+                resultMessage.textContent =
+                    "No quiz attempts found for this assessment.";
+                resultMessage.className = "message";
+                return;
+            }
+
+            for (const attempt of attempts) {
+                const row = document.createElement("tr");
+
+                const values = [
+                    attempt.studentName ?? "Unknown",
+                    `${attempt.score ?? 0}/${attempt.totalQuestions ?? 0}`,
+                    `${attempt.percentage ?? 0}%`,
+                    attempt.submittedAt
+                        ? new Date(attempt.submittedAt).toLocaleString()
+                        : "Unknown"
+                ];
+
+                for (const value of values) {
+                    const cell = document.createElement("td");
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                }
+
+                body.appendChild(row);
+            }
+
+            resultMessage.textContent =
+                `Found ${attempts.length} quiz attempt(s).`;
+            resultMessage.className = "message success";
+        } catch (error) {
+            resultMessage.textContent = error.message;
+            resultMessage.className = "message error";
+        }
+    }
+
+    loadAssessments();
+</script>
+</body>
+</html>

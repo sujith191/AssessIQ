@@ -1,0 +1,13 @@
+# Ignore local secrets and configuration
+backend/src/main/resources/application-local.properties
+.env
+.env.*
+!.env.example
+
+# Java build output
+backend/target/
+
+# IDE settings
+.vscode/
+.idea/
+*.log
