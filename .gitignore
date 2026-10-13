@@ -11,3 +11,8 @@ backend/target/
 .vscode/
 .idea/
 *.log
+# Local secrets - never commit these
+.env
+.env.*
+!.env.example
+backend/src/main/resources/application-local.properties

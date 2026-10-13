@@ -1,4 +1,5 @@
-package app.controller;
+
+package app;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,15 +35,15 @@ public class AuthController {
     public ResponseEntity<?> register(
             @RequestBody RegisterRequest request) {
 
-        if (request.getUsername() == null ||
-                request.getUsername().isBlank() ||
-                request.getEmail() == null ||
-                request.getEmail().isBlank() ||
-                request.getPassword() == null ||
-                request.getPassword().length() < 8) {
+        if (request.getUsername() == null
+                || request.getUsername().isBlank()
+                || request.getEmail() == null
+                || request.getEmail().isBlank()
+                || request.getPassword() == null
+                || request.getPassword().length() < 8) {
 
-            return ResponseEntity.badRequest()
-                    .body("Enter a username, email, and password of at least 8 characters.");
+            return ResponseEntity.badRequest().body(
+                    "Enter a username, email, and password of at least 8 characters.");
         }
 
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -58,10 +59,7 @@ public class AuthController {
         User user = new User();
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
-        user.setPassword(
-                passwordEncoder.encode(request.getPassword()));
-
-        // Public registration always creates a student.
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole("STUDENT");
 
         User saved = userRepository.save(user);
@@ -70,8 +68,7 @@ public class AuthController {
                 .body(new UserResponse(
                         saved.getId(),
                         saved.getUsername(),
-                        saved.getEmail()
-                ));
+                        saved.getEmail()));
     }
 
     @PostMapping("/login")
@@ -79,26 +76,26 @@ public class AuthController {
             @RequestBody LoginRequest request,
             HttpServletRequest httpRequest) {
 
-        if (request.getUsername() == null ||
-                request.getPassword() == null) {
+        if (request.getUsername() == null
+                || request.getUsername().isBlank()
+                || request.getPassword() == null
+                || request.getPassword().isBlank()) {
 
             return ResponseEntity.badRequest()
                     .body("Username and password are required.");
         }
 
-        var user = userRepository.findByUsername(
-                request.getUsername());
+        User loggedIn = userRepository.findByUsername(
+                request.getUsername()).orElse(null);
 
-        if (user.isEmpty() ||
-                !passwordEncoder.matches(
+        if (loggedIn == null
+                || !passwordEncoder.matches(
                         request.getPassword(),
-                        user.get().getPassword())) {
+                        loggedIn.getPassword())) {
 
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Invalid username or password.");
         }
-
-        User loggedIn = user.get();
 
         HttpSession oldSession = httpRequest.getSession(false);
 
@@ -115,8 +112,7 @@ public class AuthController {
         return ResponseEntity.ok(new UserResponse(
                 loggedIn.getId(),
                 loggedIn.getUsername(),
-                loggedIn.getEmail()
-        ));
+                loggedIn.getEmail()));
     }
 
     @GetMapping("/me")
@@ -125,24 +121,40 @@ public class AuthController {
 
         HttpSession session = request.getSession(false);
 
-        if (session == null ||
-                session.getAttribute("userId") == null) {
+        if (session == null
+                || session.getAttribute("userId") == null) {
 
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Please log in.");
         }
 
-        return userRepository.findById(
-                (Long) session.getAttribute("userId"))
-                .<ResponseEntity<?>>map(user ->
-                        ResponseEntity.ok(new UserResponse(
-                                user.getId(),
-                                user.getUsername(),
-                                user.getEmail()
-                        )))
-                .orElseGet(() ->
-                        ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                                .body("User account not found."));
+        Object sessionUserId = session.getAttribute("userId");
+
+        if (!(sessionUserId instanceof Long)) {
+            session.invalidate();
+
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body("Invalid login session. Please log in again.");
+        }
+
+        Long userId = (Long) sessionUserId;
+
+        return userRepository.findById(userId)
+                .<ResponseEntity<?>>map(user -> {
+                    session.setAttribute("username", user.getUsername());
+                    session.setAttribute("role", user.getRole());
+
+                    return ResponseEntity.ok(new UserResponse(
+                            user.getId(),
+                            user.getUsername(),
+                            user.getEmail()));
+                })
+                .orElseGet(() -> {
+                    session.invalidate();
+
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                            .body("User account not found. Please log in again.");
+                });
     }
 
     @PostMapping("/logout")

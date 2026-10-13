@@ -1,0 +1,35 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: assessiq-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: assessiq
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the .env file}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: assessiq-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/assessiq
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the .env file}
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

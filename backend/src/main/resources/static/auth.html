@@ -140,12 +140,21 @@
         <h2>Welcome Back</h2>
 
         <label for="loginUsername">Username</label>
-        <input id="loginUsername" name="username"
-               autocomplete="username" required>
+        <input
+            id="loginUsername"
+            name="username"
+            autocomplete="username"
+            required
+        >
 
         <label for="loginPassword">Password</label>
-        <input id="loginPassword" name="password" type="password"
-               autocomplete="current-password" required>
+        <input
+            id="loginPassword"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+        >
 
         <button class="submit" type="submit">Login</button>
     </form>
@@ -154,16 +163,32 @@
         <h2>Create Account</h2>
 
         <label for="registerUsername">Username</label>
-        <input id="registerUsername" name="username"
-               autocomplete="username" minlength="3" required>
+        <input
+            id="registerUsername"
+            name="username"
+            autocomplete="username"
+            minlength="3"
+            required
+        >
 
         <label for="registerEmail">Email</label>
-        <input id="registerEmail" name="email" type="email"
-               autocomplete="email" required>
+        <input
+            id="registerEmail"
+            name="email"
+            type="email"
+            autocomplete="email"
+            required
+        >
 
         <label for="registerPassword">Password</label>
-        <input id="registerPassword" name="password" type="password"
-               autocomplete="new-password" minlength="8" required>
+        <input
+            id="registerPassword"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            required
+        >
 
         <button class="submit" type="submit">Create Account</button>
     </form>
@@ -180,9 +205,23 @@
     const registerTab = document.getElementById("registerTab");
     const message = document.getElementById("message");
 
-    function showMessage(text, type) {
+    function showMessage(text, type = "") {
         message.textContent = text;
         message.className = "message " + type;
+    }
+
+    async function readResponse(response) {
+        const text = await response.text();
+
+        if (!text) {
+            return {};
+        }
+
+        try {
+            return JSON.parse(text);
+        } catch {
+            return { message: text };
+        }
     }
 
     function showLogin() {
@@ -190,7 +229,7 @@
         registerForm.classList.add("hidden");
         loginTab.classList.add("active");
         registerTab.classList.remove("active");
-        showMessage("", "");
+        showMessage("");
     }
 
     function showRegister() {
@@ -198,7 +237,7 @@
         loginForm.classList.add("hidden");
         registerTab.classList.add("active");
         loginTab.classList.remove("active");
-        showMessage("", "");
+        showMessage("");
     }
 
     loginTab.addEventListener("click", showLogin);
@@ -209,7 +248,7 @@
 
         const button = registerForm.querySelector(".submit");
         button.disabled = true;
-        showMessage("Creating your account...", "");
+        showMessage("Creating your account...");
 
         try {
             const response = await fetch("/api/auth/register", {
@@ -224,7 +263,7 @@
                 })
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
 
             if (!response.ok) {
                 throw new Error(
@@ -232,17 +271,25 @@
                 );
             }
 
+            const registeredUsername =
+                data.username ||
+                document.getElementById("registerUsername").value.trim();
+
             registerForm.reset();
             showLogin();
+
             document.getElementById("loginUsername").value =
-                data.username || "";
+                registeredUsername;
 
             showMessage(
                 "Registration successful! Please log in.",
                 "success"
             );
         } catch (error) {
-            showMessage(error.message, "error");
+            showMessage(
+                error.message || "Unable to register. Check the server.",
+                "error"
+            );
         } finally {
             button.disabled = false;
         }
@@ -253,7 +300,7 @@
 
         const button = loginForm.querySelector(".submit");
         button.disabled = true;
-        showMessage("Logging in...", "");
+        showMessage("Logging in...");
 
         try {
             const response = await fetch("/api/auth/login", {
@@ -267,17 +314,25 @@
                 })
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
 
             if (!response.ok) {
-                throw new Error(data.message || data.error || "Login failed.");
+                throw new Error(
+                    data.message || data.error || "Login failed."
+                );
             }
 
-            showMessage("Login successful! Opening student dashboard...", "success");
+            showMessage(
+                "Login successful! Opening student dashboard...",
+                "success"
+            );
 
             window.location.href = "/student.html";
         } catch (error) {
-            showMessage(error.message, "error");
+            showMessage(
+                error.message || "Unable to log in. Check the server.",
+                "error"
+            );
         } finally {
             button.disabled = false;
         }
@@ -285,3 +340,4 @@
 </script>
 </body>
 </html>
+

@@ -22,9 +22,11 @@ import app.dto.SubmitAnswerRequest;
 import app.entity.Assessment;
 import app.entity.Question;
 import app.entity.QuizAttempt;
+import app.entity.User;
 import app.repository.AssessmentRepository;
 import app.repository.QuestionRepository;
 import app.repository.QuizAttemptRepository;
+import app.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
@@ -36,18 +38,20 @@ public class AssessmentController {
     private final AssessmentRepository assessmentRepository;
     private final QuestionRepository questionRepository;
     private final QuizAttemptRepository quizAttemptRepository;
+    private final UserRepository userRepository;
 
     public AssessmentController(
             AssessmentRepository assessmentRepository,
             QuestionRepository questionRepository,
-            QuizAttemptRepository quizAttemptRepository) {
+            QuizAttemptRepository quizAttemptRepository,
+            UserRepository userRepository) {
 
         this.assessmentRepository = assessmentRepository;
         this.questionRepository = questionRepository;
         this.quizAttemptRepository = quizAttemptRepository;
+        this.userRepository = userRepository;
     }
 
-    // Checks whether the current session belongs to a teacher
     private ResponseEntity<Map<String, String>> checkTeacher(
             HttpServletRequest request) {
 
@@ -55,26 +59,38 @@ public class AssessmentController {
 
         if (session == null
                 || session.getAttribute("userId") == null) {
-
             return ResponseEntity.status(401)
-                    .body(Map.of(
-                            "message",
-                            "Please log in first"));
+                    .body(Map.of("message", "Please log in first"));
         }
 
-        Object role = session.getAttribute("role");
+        Object value = session.getAttribute("userId");
 
-        if (!"TEACHER".equals(role)) {
+        if (!(value instanceof Long)) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("message", "Invalid session. Please log in again"));
+        }
+
+        Long userId = (Long) value;
+        User user = userRepository.findById(userId).orElse(null);
+
+        if (user == null) {
+            session.invalidate();
+            return ResponseEntity.status(401)
+                    .body(Map.of("message", "User not found. Please log in again"));
+        }
+
+        // Always use the current role from the database.
+        session.setAttribute("username", user.getUsername());
+        session.setAttribute("role", user.getRole());
+
+        if (!"TEACHER".equalsIgnoreCase(user.getRole())) {
             return ResponseEntity.status(403)
-                    .body(Map.of(
-                            "message",
-                            "Teacher access required"));
+                    .body(Map.of("message", "Teacher access required"));
         }
 
         return null;
     }
 
-    // Create assessment - TEACHER ONLY
     @PostMapping
     public ResponseEntity<?> createAssessment(
             @RequestBody Assessment assessment,
@@ -87,26 +103,26 @@ public class AssessmentController {
             return accessError;
         }
 
+        HttpSession session = request.getSession(false);
+        Long teacherId = (Long) session.getAttribute("userId");
+
         if (assessment.getTitle() == null
                 || assessment.getTitle().isBlank()) {
-
             return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "message",
-                            "Assessment title is required"));
+                    .body(Map.of("message", "Assessment title is required"));
         }
 
+        // Set the creator from the authenticated session.
         assessment.setId(null);
+        assessment.setCreatedBy(teacherId);
 
-        if (assessment.getQuestions() != null) {
-
+        if (assessment.getQuestions() == null) {
+            assessment.setQuestions(new ArrayList<>());
+        } else {
             for (Question question : assessment.getQuestions()) {
                 question.setId(null);
                 question.setAssessment(assessment);
             }
-
-        } else {
-            assessment.setQuestions(new ArrayList<>());
         }
 
         Assessment saved = assessmentRepository.save(assessment);
@@ -120,7 +136,6 @@ public class AssessmentController {
         ));
     }
 
-    // List all assessments
     @GetMapping
     public ResponseEntity<?> getAllAssessments() {
 
@@ -128,18 +143,11 @@ public class AssessmentController {
                 assessmentRepository.findAll()
                         .stream()
                         .map(assessment -> {
-                            Map<String, Object> item =
-                                    new HashMap<>();
-
+                            Map<String, Object> item = new HashMap<>();
                             item.put("id", assessment.getId());
                             item.put("title", assessment.getTitle());
-                            item.put(
-                                    "description",
-                                    assessment.getDescription());
-                            item.put(
-                                    "createdBy",
-                                    assessment.getCreatedBy());
-
+                            item.put("description", assessment.getDescription());
+                            item.put("createdBy", assessment.getCreatedBy());
                             return item;
                         })
                         .toList();
@@ -147,22 +155,18 @@ public class AssessmentController {
         return ResponseEntity.ok(response);
     }
 
-    // Get one assessment
     @GetMapping("/{id}")
     public ResponseEntity<?> getAssessmentById(
             @PathVariable Long id) {
 
-        var assessmentOptional =
-                assessmentRepository.findById(id);
+        Assessment assessment =
+                assessmentRepository.findById(id).orElse(null);
 
-        if (assessmentOptional.isEmpty()) {
+        if (assessment == null) {
             return ResponseEntity.notFound().build();
         }
 
-        Assessment assessment = assessmentOptional.get();
-
         Map<String, Object> response = new HashMap<>();
-
         response.put("id", assessment.getId());
         response.put("title", assessment.getTitle());
         response.put("description", assessment.getDescription());
@@ -171,7 +175,6 @@ public class AssessmentController {
         return ResponseEntity.ok(response);
     }
 
-    // Add question - TEACHER ONLY
     @PostMapping("/{id}/questions")
     public ResponseEntity<?> addQuestion(
             @PathVariable Long id,
@@ -185,43 +188,35 @@ public class AssessmentController {
             return accessError;
         }
 
-        var assessmentOptional =
-                assessmentRepository.findById(id);
+        Assessment assessment =
+                assessmentRepository.findById(id).orElse(null);
 
-        if (assessmentOptional.isEmpty()) {
+        if (assessment == null) {
             return ResponseEntity.notFound().build();
         }
 
         if (question.getText() == null
                 || question.getText().isBlank()) {
-
             return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "message",
-                            "Question text is required"));
+                    .body(Map.of("message", "Question text is required"));
         }
 
         question.setId(null);
-        question.setAssessment(assessmentOptional.get());
+        question.setAssessment(assessment);
 
         Question saved = questionRepository.save(question);
 
         return ResponseEntity.ok(Map.of(
                 "id", saved.getId(),
                 "text", saved.getText(),
-                "optionA", saved.getOptionA() == null
-                        ? "" : saved.getOptionA(),
-                "optionB", saved.getOptionB() == null
-                        ? "" : saved.getOptionB(),
-                "optionC", saved.getOptionC() == null
-                        ? "" : saved.getOptionC(),
-                "optionD", saved.getOptionD() == null
-                        ? "" : saved.getOptionD(),
+                "optionA", saved.getOptionA() == null ? "" : saved.getOptionA(),
+                "optionB", saved.getOptionB() == null ? "" : saved.getOptionB(),
+                "optionC", saved.getOptionC() == null ? "" : saved.getOptionC(),
+                "optionD", saved.getOptionD() == null ? "" : saved.getOptionD(),
                 "message", "Question added successfully"
         ));
     }
 
-    // Get questions without exposing correct answers
     @GetMapping("/{id}/questions")
     public ResponseEntity<?> getQuestions(
             @PathVariable Long id) {
@@ -234,16 +229,13 @@ public class AssessmentController {
                 questionRepository.findByAssessmentId(id)
                         .stream()
                         .map(question -> {
-                            Map<String, Object> item =
-                                    new HashMap<>();
-
+                            Map<String, Object> item = new HashMap<>();
                             item.put("id", question.getId());
                             item.put("text", question.getText());
                             item.put("optionA", question.getOptionA());
                             item.put("optionB", question.getOptionB());
                             item.put("optionC", question.getOptionC());
                             item.put("optionD", question.getOptionD());
-
                             return item;
                         })
                         .toList();
@@ -251,11 +243,18 @@ public class AssessmentController {
         return ResponseEntity.ok(response);
     }
 
-    // Submit quiz answers
     @PostMapping("/{id}/submit")
     public ResponseEntity<?> submitAnswers(
             @PathVariable Long id,
-            @RequestBody List<SubmitAnswerRequest> answers) {
+            @RequestBody List<SubmitAnswerRequest> answers,
+            HttpServletRequest request) {
+
+        HttpSession session = request.getSession(false);
+
+        if (session == null || session.getAttribute("userId") == null) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("message", "Please log in first"));
+        }
 
         if (!assessmentRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
@@ -263,86 +262,63 @@ public class AssessmentController {
 
         if (answers == null || answers.isEmpty()) {
             return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "message",
-                            "At least one answer is required"));
+                    .body(Map.of("message", "At least one answer is required"));
         }
 
-        List<Question> questions =
-                questionRepository.findByAssessmentId(id);
+        List<Question> questions = questionRepository.findByAssessmentId(id);
 
         if (questions.isEmpty()) {
             return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "message",
-                            "This assessment has no questions"));
+                    .body(Map.of("message", "This assessment has no questions"));
         }
 
         Map<Long, Question> questionMap = new HashMap<>();
-
         for (Question question : questions) {
             questionMap.put(question.getId(), question);
         }
 
         Set<Long> submittedQuestionIds = new HashSet<>();
-
         int score = 0;
         int answered = 0;
 
         for (SubmitAnswerRequest answer : answers) {
 
-            if (answer == null
-                    || answer.getQuestionId() == null) {
-
+            if (answer == null || answer.getQuestionId() == null) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "message",
-                                "Question ID is required"));
+                        .body(Map.of("message", "Question ID is required"));
             }
 
             Long questionId = answer.getQuestionId();
 
             if (!submittedQuestionIds.add(questionId)) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "message",
-                                "Duplicate question ID: " + questionId));
+                        .body(Map.of("message", "Duplicate question ID: " + questionId));
             }
 
             Question question = questionMap.get(questionId);
 
             if (question == null) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "message",
+                        .body(Map.of("message",
                                 "Question does not belong to this assessment"));
             }
 
-            String selected =
-                    answer.getSelectedAnswer() == null
-                            ? ""
-                            : answer.getSelectedAnswer()
-                                    .trim()
-                                    .toUpperCase();
+            String selected = answer.getSelectedAnswer() == null
+                    ? ""
+                    : answer.getSelectedAnswer().trim().toUpperCase();
 
             if (!selected.isEmpty()
-                    && !List.of("A", "B", "C", "D")
-                            .contains(selected)) {
-
+                    && !List.of("A", "B", "C", "D").contains(selected)) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "message",
-                                "Answer must be A, B, C, or D"));
+                        .body(Map.of("message", "Answer must be A, B, C, or D"));
             }
 
             if (!selected.isEmpty()) {
                 answered++;
 
                 if (question.getCorrectAnswer() != null
-                        && question.getCorrectAnswer()
-                                .trim()
+                        && question.getCorrectAnswer().trim()
                                 .equalsIgnoreCase(selected)) {
-
                     score++;
                 }
             }
@@ -350,24 +326,21 @@ public class AssessmentController {
 
         int totalQuestions = questions.size();
         int unanswered = totalQuestions - answered;
-
         double percentage = Math.round(
                 (score * 10000.0) / totalQuestions) / 100.0;
 
         QuizAttempt attempt = new QuizAttempt();
-
         attempt.setAssessmentId(id);
-        attempt.setStudentName("Student 1");
+        attempt.setStudentName(
+                String.valueOf(session.getAttribute("username")));
         attempt.setScore(score);
         attempt.setTotalQuestions(totalQuestions);
         attempt.setPercentage(percentage);
         attempt.setSubmittedAt(LocalDateTime.now());
 
-        QuizAttempt savedAttempt =
-                quizAttemptRepository.save(attempt);
+        QuizAttempt savedAttempt = quizAttemptRepository.save(attempt);
 
         Map<String, Object> result = new HashMap<>();
-
         result.put("attemptId", savedAttempt.getId());
         result.put("assessmentId", id);
         result.put("totalQuestions", totalQuestions);
@@ -377,14 +350,11 @@ public class AssessmentController {
         result.put("unansweredQuestions", unanswered);
         result.put("score", score + "/" + totalQuestions);
         result.put("percentage", percentage);
-        result.put(
-                "message",
-                "Quiz submitted and result saved successfully");
+        result.put("message", "Quiz submitted and result saved successfully");
 
         return ResponseEntity.ok(result);
     }
 
-    // View student results - TEACHER ONLY
     @GetMapping("/{id}/attempts")
     public ResponseEntity<?> getAssessmentAttempts(
             @PathVariable Long id,
@@ -402,31 +372,17 @@ public class AssessmentController {
         }
 
         List<Map<String, Object>> results =
-                quizAttemptRepository
-                        .findByAssessmentIdOrderBySubmittedAtDesc(id)
+                quizAttemptRepository.findByAssessmentIdOrderBySubmittedAtDesc(id)
                         .stream()
                         .map(attempt -> {
-                            Map<String, Object> item =
-                                    new HashMap<>();
-
+                            Map<String, Object> item = new HashMap<>();
                             item.put("attemptId", attempt.getId());
-                            item.put(
-                                    "assessmentId",
-                                    attempt.getAssessmentId());
-                            item.put(
-                                    "studentName",
-                                    attempt.getStudentName());
+                            item.put("assessmentId", attempt.getAssessmentId());
+                            item.put("studentName", attempt.getStudentName());
                             item.put("score", attempt.getScore());
-                            item.put(
-                                    "totalQuestions",
-                                    attempt.getTotalQuestions());
-                            item.put(
-                                    "percentage",
-                                    attempt.getPercentage());
-                            item.put(
-                                    "submittedAt",
-                                    attempt.getSubmittedAt());
-
+                            item.put("totalQuestions", attempt.getTotalQuestions());
+                            item.put("percentage", attempt.getPercentage());
+                            item.put("submittedAt", attempt.getSubmittedAt());
                             return item;
                         })
                         .toList();
